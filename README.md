@@ -60,7 +60,6 @@ GET https://favicon-api.workers.dev/?url=bilibili.com&token=123456&size=32
 在 Cloudflare Worker 的 **Settings** -> **Variables** 中设置：
 
 *   `TOKEN`: (可选) 接口访问密码。
-    *   **注意**：代码已做兼容处理，变量名支持大写 `TOKEN` 或小写 `token`。
     *   如果不设置该变量，则接口对公众开放，无需密码。
 
 ## 📦 常见问题 (FAQ)
