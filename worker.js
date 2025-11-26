@@ -38,29 +38,14 @@ async function handleGetFavicon(request, env) {
   const targetUrl = normalizeUrl(rawTargetUrl);
   if (!targetUrl) return jsonResponse({ error: 'Invalid URL format' }, 400);
 
-  // 1. Google S2 (Priority)
-  // Note: Google S2 might fail on pure IPv6 domains or return a default globe.
-  try {
-    const googleUrl = `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(targetUrl)}&sz=${size}`;
-    const gRes = await fetch(googleUrl);
-    // Google almost always returns 200, checking content-type is the basic filter.
-    if (gRes.ok && gRes.headers.get("content-type")?.includes("image")) {
-       return new Response(gRes.body, {
-         headers: { 
-           "Content-Type": gRes.headers.get("content-type"),
-           "Cache-Control": "public, max-age=86400" 
-         }
-       });
-    }
-  } catch (e) {}
-
-  // 2. HTML Scraping (Robust Fallback for IPv6/Custom sites)
+  // 1. Try Scraping HTML (Priority)
   try {
     const scrapedIconUrl = await getIconFromHtml(targetUrl);
     if (scrapedIconUrl) {
       const sRes = await fetch(scrapedIconUrl, { 
         headers: { 
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': targetUrl
         }
       });
       if (sRes.ok && sRes.headers.get("content-type")?.includes("image")) {
@@ -71,6 +56,22 @@ async function handleGetFavicon(request, env) {
           }
         });
       }
+    }
+  } catch (e) {
+    // console.log('Scrape failed, trying fallback');
+  }
+
+  // 2. Try Google S2 (Fallback)
+  try {
+    const googleUrl = `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(targetUrl)}&sz=${size}`;
+    const gRes = await fetch(googleUrl);
+    if (gRes.ok && gRes.headers.get("content-type")?.includes("image")) {
+       return new Response(gRes.body, {
+         headers: { 
+           "Content-Type": gRes.headers.get("content-type"),
+           "Cache-Control": "public, max-age=86400" 
+         }
+       });
     }
   } catch (e) {}
 
@@ -97,13 +98,13 @@ async function getIconFromHtml(targetUrl) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
     
-    // Enhanced headers to look like a real browser (Fixes some IPv6 site blocks)
+    // Enhanced headers
     const response = await fetch(targetUrl, {
       headers: { 
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.9',
-          'Referer': targetUrl, // Some sites require Referer
+          'Referer': targetUrl,
           'Connection': 'keep-alive'
       },
       redirect: 'follow',
@@ -131,12 +132,10 @@ async function getIconFromHtml(targetUrl) {
       .text();
 
     if (!iconLink) {
-        // Fallback to default location
         const u = new URL(targetUrl);
         return `${u.protocol}//${u.hostname}${u.port ? ':'+u.port : ''}/favicon.ico`;
     }
     
-    // Handle relative URLs
     return new URL(iconLink, targetUrl).href;
   } catch (e) {
     return null;
@@ -307,7 +306,6 @@ function renderFullPage(initialMode, currentUrl) {
         .btn-outline { background: white; border: 1px solid var(--border); color: var(--text-sub); }
         .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
         
-        /* Logout Button - Specific Red Hover */
         .btn-logout { background: white; border: 1px solid var(--border); color: var(--text-sub); }
         .btn-logout:hover { border-color: var(--danger); color: var(--danger); }
 
@@ -333,7 +331,7 @@ function renderFullPage(initialMode, currentUrl) {
         
         .input {
             width: 100%;
-            height: 46px; /* Strict height */
+            height: 46px; 
             line-height: normal;
             padding: 0 1rem;
             border-radius: 8px;
@@ -447,7 +445,6 @@ function renderFullPage(initialMode, currentUrl) {
                 </span>
                 Favicon Service
             </h2>
-            <!-- LOGOUT BUTTON MODIFIED -->
             <button onclick="logout()" class="btn btn-logout" style="font-size:0.85rem; height: 36px;">
                 Logout
             </button>
@@ -679,54 +676,4 @@ function renderFullPage(initialMode, currentUrl) {
         
         setLoading(btn, true);
         const img = new Image();
-        img.onload = () => { showResult(finalUrl); setLoading(btn, false); };
-        img.onerror = () => { showResult(finalUrl); setLoading(btn, false); };
-        img.src = finalUrl;
-    }
-
-    function showResult(url) {
-        const resBox = document.getElementById('test-result');
-        const imgEl = document.getElementById('test-img');
-        const link = document.getElementById('test-link');
-        imgEl.src = url;
-        link.textContent = url;
-        link.href = url;
-        resBox.style.display = 'flex';
-    }
-
-    async function apiCall(path, method, body) {
-        const opts = {
-            method,
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + localPwd
-            }
-        };
-        if (body) opts.body = JSON.stringify(body);
-        try {
-            const req = await fetch(path, opts);
-            const data = await req.json();
-            data.status = req.status;
-            return data;
-        } catch (e) {
-            return { error: 'Network error', status: 500 };
-        }
-    }
-
-    function toast(msg) {
-        const el = document.getElementById('toast');
-        el.textContent = msg;
-        el.classList.add('show');
-        setTimeout(() => el.classList.remove('show'), 3000);
-    }
-
-    function escapeHtml(text) {
-        if (!text) return text;
-        return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-    }
-
-    init();
-</script>
-</body>
-</html>`;
-}
+        img.onload = () => { showResult(finalUrl); s
