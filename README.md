@@ -105,7 +105,7 @@ curl "https://your-worker.workers.dev/get?token=YOUR_TOKEN&url=github.com&size=6
 
 | Key | 类型 | 说明 |
 | :--- | :--- | :--- |
-| `pwd` | String | 管理员登录密码（明文存储，请确保 Worker URL 安全） |
+| `pwd` | String | 管理员登录密码 |
 | `tokens` | JSON Array | 存储所有 Token 的列表 |
 
 ## 📄 License
