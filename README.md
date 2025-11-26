@@ -108,23 +108,6 @@ curl "https://your-worker.workers.dev/get?token=YOUR_TOKEN&url=github.com&size=6
 | `pwd` | String | 管理员登录密码（明文存储，请确保 Worker URL 安全） |
 | `tokens` | JSON Array | 存储所有 Token 的列表 |
 
-**Token 数据结构示例:**
-```json
-[
-  {
-    "name": "My App",
-    "token": "55cbadda-b995-4ee3-a927-3bca1e22d5ac",
-    "created": "2025-11-26"
-  }
-]
-```
-
-## 🖼️ 界面预览
-
-*   **Setup/Login**: 极简的居中卡片设计，支持密码显隐。
-*   **Dashboard**: 包含 API 使用示例生成器、Token 管理列表。
-*   **交互**: 按钮包含 Loading 状态，Logout 按钮悬停红色警示，删除二次确认。
-
 ## 📄 License
 
 MIT License. Feel free to use and modify.
