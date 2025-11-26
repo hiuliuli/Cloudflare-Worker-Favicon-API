@@ -1,83 +1,130 @@
-# Cloudflare-Worker-Favicon-API
-一个基于 Cloudflare Workers 的高性能网站图标获取工具。它能够自动解析目标网站 HTML，获取最佳图标，支持防盗链 Token 验证、自定义尺寸缩放、智能缓存以及优雅的错误回退。
-## ✨ 功能特性
+# 🌐 Favicon API Service on Cloudflare Workers
 
-*   **⚡️ 极速响应**：运行在 Cloudflare 边缘节点，利用全球 CDN 缓存。
-*   **🔍 智能解析**：自动解析 HTML 中的 `<link rel="icon">`、`apple-touch-icon` 等标签，解析失败自动回退至 `/favicon.ico`。
-*   **📐 尺寸调整**：支持通过 `size` 参数强制定义图标尺寸（使用 SVG 容器封装技术，100% 兼容）。
-*   **🛡️ 安全验证**：支持 Token 访问控制，防止接口被恶意滥用。
-*   **🎭 隐私保护**：直接访问根路径返回 `404 Not Found`，隐藏接口真实用途。
-*   **🖼️ 优雅回退**：获取失败时自动返回内置的默认图标（灰色地球 SVG），防止前端裂图。
-*   **💾 自动缓存**：支持 Cloudflare Cache API，减少源站请求频率。
+一个部署在 Cloudflare Workers 上的轻量级、高性能网站图标获取服务。内置现代化管理面板，支持 Token 鉴权、多策略图标抓取及 IPv6 网站解析。
 
-## 🚀 快速部署
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Platform](https://img.shields.io/badge/platform-Cloudflare%20Workers-orange.svg)
+![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen.svg)
 
-### Cloudflare Dashboard (推荐)
+## ✨ 主要功能
 
+*   **双重获取策略**：优先使用 Google S2 服务获取图标（速度极快），失败时自动回退到 HTML 解析模式（支持 `<link rel="icon">` 等标签）。
+*   **安全鉴权**：API 接口强制要求 Token 验证，防止滥用。
+*   **内置管理面板**：
+    *   **零依赖**：纯原生 HTML/CSS/JS 实现，无 Vue/React/Tailwind 依赖，加载速度极快。
+    *   **现代化 UI**：采用毛玻璃（Glassmorphism）设计，支持加载动画、密码显隐切换。
+    *   **Token 管理**：可视化创建、查看、删除 Token。
+    *   **API 测试**：面板内置 API 调试工具，实时预览图标抓取结果。
+*   **KV 存储**：使用 Cloudflare KV 存储密码和 Token 数据。
+
+## 🚀 部署指南
+
+### 1. 准备工作
+你需要一个 [Cloudflare](https://www.cloudflare.com/) 账号。
+
+### 2. 创建 KV Namespace
 1.  登录 Cloudflare Dashboard。
-2.  进入 **Workers & Pages** -> **Create Application** -> **Create Worker**。
-3.  命名为 `favicon-api` (或你喜欢的名字)，点击 **Deploy**。
-4.  点击 **Edit Code**，将项目代码 (`worker.js`) 复制粘贴进去，保存并部署。
-5.  **设置 Token (可选但推荐)**：
-    *   进入 Worker 设置页面 -> **Settings** -> **Variables and Secrets**。
-    *   添加变量：
-        *   **Name**: `TOKEN`
-        *   **Value**: 设置你的密码（例如 `my_secret_key_2025`）。
-    *   点击 **Save and deploy**。
+2.  进入 **Workers & Pages** -> **KV**。
+3.  点击 **Create a Namespace**。
+4.  命名为 `Favicon_KV` (或者你喜欢的名字)，点击 Add。
 
-## 🛠 API 使用说明
+### 3. 创建 Worker
+1.  进入 **Workers & Pages** -> **Overview**。
+2.  点击 **Create Application** -> **Create Worker**。
+3.  命名你的 Worker（例如 `favicon-api`），点击 Deploy。
 
-### 基本 URL 格式
+### 4. 绑定 KV 数据库 (关键步骤)
+1.  进入你刚才创建的 Worker 的设置页面 (**Settings**)。
+2.  选择 **Variables** 选项卡。
+3.  向下滚动到 **KV Namespace Bindings**。
+4.  点击 **Add Binding**：
+    *   **Variable name**: 填写 `MY_KV` (**必须完全一致**，代码中读取的是此变量名)。
+    *   **KV Namespace**: 选择第 2 步创建的 `Favicon_KV`。
+5.  点击 **Save and deploy**。
 
+### 5. 部署代码
+1.  点击 **Edit code** 进入在线编辑器。
+2.  将 `worker.js` 的内容完全覆盖到编辑器中。
+3.  点击右上角的 **Deploy**。
+
+## 🛠️ 初始化与配置
+
+1.  **首次访问**：
+    在浏览器中访问你的 Worker 域名（例如 `https://favicon-api.your-name.workers.dev`）。
+2.  **设置密码**：
+    系统会检测到尚未初始化，显示 **"Initial Setup"** 界面。请输入一个强密码作为管理员密码。
+3.  **登录面板**：
+    使用刚才设置的密码登录 Dashboard。
+4.  **创建 Token**：
+    在 Dashboard 中点击 **Create** 按钮生成一个新的 Token。你将使用此 Token 调用 API。
+
+## 🔌 API 文档
+
+### 获取图标接口
+
+**Endpoint:**
+`GET /get`
+
+**Parameters:**
+
+| 参数 | 类型 | 必填 | 说明 | 默认值 | 示例 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `token` | String | ✅ | 在后台生成的访问令牌 | - | `f9f2f3...` |
+| `url` | String | ✅ | 目标网站的 URL 或域名 | - | `github.com` |
+| `size` | Number | ❌ | 图标尺寸 (像素) | `64` | `128` |
+
+**示例请求:**
+
+```bash
+curl "https://your-worker.workers.dev/get?token=YOUR_TOKEN&url=github.com&size=64"
 ```
-https://<你的Worker域名>/?url=<目标网址>&token=<你的密码>&size=<尺寸>
+
+**响应:**
+*   **成功**: 返回 `image/png`, `image/x-icon`, `image/svg+xml` 等图片流。
+*   **失败**:
+    *   `400 Bad Request`: 缺少参数。
+    *   `401 Unauthorized`: Token 缺失。
+    *   `403 Forbidden`: Token 无效。
+
+**兜底机制:**
+如果无法获取目标网站图标，API 将返回一张默认的灰色地球 SVG 图标。
+
+## ⚙️ 管理 API (内部使用)
+
+以下接口主要供前端面板使用，均需要 Header 鉴权 `Authorization: Bearer <AdminPassword>`。
+
+*   `POST /api/setup`: 初始化设置密码。
+*   `POST /api/login`: 校验管理员密码。
+*   `GET /api/tokens`: 获取 Token 列表。
+*   `POST /api/token/create`: 创建新 Token。
+*   `POST /api/token/delete`: 删除 Token。
+
+## 📂 数据存储结构 (KV)
+
+数据存储在绑定的 `MY_KV` 中：
+
+| Key | 类型 | 说明 |
+| :--- | :--- | :--- |
+| `pwd` | String | 管理员登录密码（明文存储，请确保 Worker URL 安全） |
+| `tokens` | JSON Array | 存储所有 Token 的列表 |
+
+**Token 数据结构示例:**
+```json
+[
+  {
+    "name": "My App",
+    "token": "55cbadda-b995-4ee3-a927-3bca1e22d5ac",
+    "created": "2025-11-26"
+  }
+]
 ```
 
-### 参数详解
+## 🖼️ 界面预览
 
-| 参数 | 类型 | 必填 | 说明 | 示例 |
-| :--- | :--- | :--- | :--- | :--- |
-| `url` | string | **是** | 目标网站地址 (支持 `google.com` 或 `https://google.com`) | `github.com` |
-| `token`| string | **是\***| 访问令牌 (如果在后台设置了 `TOKEN` 变量则必填) | `my_secret` |
-| `size` | int | 否 | 期望的图标尺寸 (像素)，最大 512。设置后会强制返回 SVG 封装的图标。 | `32` |
+*   **Setup/Login**: 极简的居中卡片设计，支持密码显隐。
+*   **Dashboard**: 包含 API 使用示例生成器、Token 管理列表。
+*   **交互**: 按钮包含 Loading 状态，Logout 按钮悬停红色警示，删除二次确认。
 
-> \*注：如果没有提供 `url` 参数，接口将直接返回 `404 Not Found`。
+## 📄 License
 
-### 调用示例
-
-**1. 基础获取：**
-```http
-GET https://favicon-api.workers.dev/?url=https://www.github.com&token=123456
-```
-
-**2. 指定尺寸 (32x32)：**
-```http
-GET https://favicon-api.workers.dev/?url=bilibili.com&token=123456&size=32
-```
-
-## ⚙️ 环境变量配置
-
-在 Cloudflare Worker 的 **Settings** -> **Variables** 中设置：
-
-*   `TOKEN`: (可选) 接口访问密码。
-    *   如果不设置该变量，则接口对公众开放，无需密码。
-
-## 📦 常见问题 (FAQ)
-
-### 1. 为什么浏览器能打开，但在其他服务器/Worker 调用报错？
-这是因为 Cloudflare 的 Bot Fight Mode 或 WAF 拦截了服务器间的请求。
-*   **解决方案 (推荐)**：如果调用方也是 Cloudflare Worker，请使用 **Service Bindings** 进行内网调用，不要使用公网 URL。
-*   **替代方案**：在请求头中伪造 `User-Agent` 模拟浏览器。
-
-### 2. 获取到的图标是 SVG 格式？
-是的。为了保证 `size` 参数在所有设备上都能准确生效（且无需使用付费的 Image Resizing 功能），当指定了 `size` 时，接口会将原始图片转为 Base64 并嵌入到一个固定尺寸的 `<svg>` 容器中返回。这能确保前端显示的尺寸绝对正确。
-
-### 3. 控制台出现 `b.getContext is not a function` 报错？
-这通常与接口无关。这是浏览器安装的某些插件（如 Dark Reader、截图工具等）试图处理返回的 SVG 图片时产生的兼容性错误。在无痕模式下访问通常不会出现此错误，不影响正常使用。
-
-### 4. 为什么直接访问域名显示 "Not Found 404"？
-这是为了安全设计的。只有携带了 `?url=...` 参数的请求才会被处理。直接访问根路径会伪装成 404 页面，隐藏 API 的存在。
-
-## 📝 License
-
-MIT License
+MIT License. Feel free to use and modify.
