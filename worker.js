@@ -5,26 +5,39 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
+    // 1. Check KV
     if (!env.MY_KV) {
       return new Response(renderError("KV Database 'MY_KV' is not bound."), {
         headers: { "Content-Type": "text/html" },
       });
     }
 
-    if (path === '/get') return handleGetFavicon(request, env);
-    if (path.startsWith('/api/')) return handleApiRequest(request, env);
+    // 2. Exact Route Matching
+    if (path === '/get') {
+        return handleGetFavicon(request, env);
+    }
+    
+    if (path.startsWith('/api/')) {
+        return handleApiRequest(request, env);
+    }
 
-    return handleHtmlRender(request, env);
+    // Only serve HTML on root path
+    if (path === '/' || path === '/index.html') {
+        return handleHtmlRender(request, env);
+    }
+
+    // 3. Return 404 for anything else
+    return new Response('404 Not Found', { status: 404 });
   },
 };
 
-// --- Logic: Icon Fetching ---
+// --- Logic: Icon Fetching with SVG Encapsulation ---
 
 async function handleGetFavicon(request, env) {
   const url = new URL(request.url);
   const rawTargetUrl = url.searchParams.get('url');
   const token = url.searchParams.get('token');
-  const size = url.searchParams.get('size') || '64';
+  const size = parseInt(url.searchParams.get('size') || '64', 10);
 
   if (!token) return jsonResponse({ error: 'Token required' }, 401);
   
@@ -34,9 +47,11 @@ async function handleGetFavicon(request, env) {
   if (!isValid) return jsonResponse({ error: 'Invalid Token' }, 403);
   if (!rawTargetUrl) return jsonResponse({ error: 'URL parameter required' }, 400);
 
-  // Normalize URL
   const targetUrl = normalizeUrl(rawTargetUrl);
   if (!targetUrl) return jsonResponse({ error: 'Invalid URL format' }, 400);
+
+  let imageData = null;
+  let contentType = null;
 
   // 1. Try Scraping HTML (Priority)
   try {
@@ -49,34 +64,73 @@ async function handleGetFavicon(request, env) {
         }
       });
       if (sRes.ok && sRes.headers.get("content-type")?.includes("image")) {
-        return new Response(sRes.body, {
-          headers: { 
-            "Content-Type": sRes.headers.get("content-type"),
-            "Cache-Control": "public, max-age=86400"
-          }
-        });
+          imageData = await sRes.arrayBuffer();
+          contentType = sRes.headers.get("content-type");
       }
     }
   } catch (e) {}
 
   // 2. Try Google S2 (Fallback)
-  try {
-    const googleUrl = `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(targetUrl)}&sz=${size}`;
-    const gRes = await fetch(googleUrl);
-    if (gRes.ok && gRes.headers.get("content-type")?.includes("image")) {
-       return new Response(gRes.body, {
-         headers: { 
-           "Content-Type": gRes.headers.get("content-type"),
-           "Cache-Control": "public, max-age=86400" 
-         }
-       });
-    }
-  } catch (e) {}
+  if (!imageData) {
+      try {
+        const googleUrl = `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(targetUrl)}&sz=${size}`;
+        const gRes = await fetch(googleUrl);
+        if (gRes.ok && gRes.headers.get("content-type")?.includes("image")) {
+           imageData = await gRes.arrayBuffer();
+           contentType = gRes.headers.get("content-type");
+        }
+      } catch (e) {}
+  }
 
-  // 3. Default Icon
-  return new Response(DEFAULT_ICON_SVG, {
+  // 3. Construct Response
+  if (imageData && contentType) {
+      // SVG Container Encapsulation
+      // We wrap the binary image in an SVG <image> tag to strictly enforce the requested dimensions.
+      const base64 = arrayBufferToBase64(imageData);
+      const svgWrapper = `
+<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+  <image href="data:${contentType};base64,${base64}" width="${size}" height="${size}" />
+</svg>`;
+
+      return new Response(svgWrapper, {
+          headers: {
+              "Content-Type": "image/svg+xml",
+              "Cache-Control": "public, max-age=86400",
+              "Access-Control-Allow-Origin": "*"
+          }
+      });
+  }
+
+  // Default Icon (also wrapped to match size)
+  return new Response(wrapSvg(DEFAULT_ICON_SVG, size), {
     headers: { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=3600" }
   });
+}
+
+// Helper: Convert buffer to base64
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+// Helper: Wrap default SVG if needed, or just return strictly sized SVG
+function wrapSvg(innerSvgContent, size) {
+    // If the default icon is already an SVG string, we embed it differently or just resize it.
+    // For simplicity with the default icon variable, let's just return a standard sized container.
+    // Since DEFAULT_ICON_SVG is a string, we strip the outer <svg> tag if complex, 
+    // but here we simply replace the viewBox/width/height to force it.
+    
+    // A safer way for arbitrary SVG strings is to use them as a data URI image too.
+    const base64 = btoa(innerSvgContent);
+    return `
+<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+  <image href="data:image/svg+xml;base64,${base64}" width="${size}" height="${size}" />
+</svg>`;
 }
 
 function normalizeUrl(input) {
@@ -96,7 +150,6 @@ async function getIconFromHtml(targetUrl) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000); 
     
-    // Enhanced headers
     const response = await fetch(targetUrl, {
       headers: { 
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -368,7 +421,6 @@ function renderFullPage(initialMode, currentUrl) {
 
         .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
         
-        /* Fixed: Vertical alignment of icon next to title */
         .top-bar h2 { font-size: 1.5rem; display: flex; align-items: center; gap: 0.75rem; }
         .top-bar h2 span { display: flex; align-items: center; justify-content: center; }
 
@@ -512,7 +564,8 @@ function renderFullPage(initialMode, currentUrl) {
 
 <script>
     const API_ORIGIN = '${domain}';
-    let localPwd = localStorage.getItem('app_pwd');
+    // Use sessionStorage instead of localStorage for security (clears on close)
+    let localPwd = sessionStorage.getItem('app_pwd');
     let tokens = [];
     const serverMode = '${initialMode}';
 
@@ -570,7 +623,7 @@ function renderFullPage(initialMode, currentUrl) {
         setLoading(btn, false);
 
         if (res.success) {
-            localStorage.setItem('app_pwd', pwd);
+            sessionStorage.setItem('app_pwd', pwd);
             localPwd = pwd;
             show('view-dashboard');
             loadTokens();
@@ -589,7 +642,7 @@ function renderFullPage(initialMode, currentUrl) {
         setLoading(btn, false);
 
         if (res.success) {
-            localStorage.setItem('app_pwd', pwd);
+            sessionStorage.setItem('app_pwd', pwd);
             localPwd = pwd;
             show('view-dashboard');
             loadTokens();
@@ -599,7 +652,7 @@ function renderFullPage(initialMode, currentUrl) {
     }
 
     function logout() {
-        localStorage.removeItem('app_pwd');
+        sessionStorage.removeItem('app_pwd');
         localPwd = null;
         document.getElementById('login-pwd').value = '';
         show('view-login');
